@@ -4,6 +4,9 @@
 autoinstall:
   version: 1
 
+  locale: en_US
+  timezone: "America/Chicago" # 'geoip' for automatic timezone detection
+
   apt:
     sources:
       deadsnakes.list:
@@ -38,6 +41,8 @@ autoinstall:
     - vim
     - wget
 
+  codecs: true  # ubuntu-restricted-addons
+
   snaps:
     - name: gnome-46-2404
     - name: gtk-common-themes
@@ -59,11 +64,17 @@ autoinstall:
     - curtin in-target -- update-grub
     - curtin in-target -- apt-get install -y cloud-init
     - curtin in-target -- apt-get autoremove -y
+    - curtin in-target -- systemctl enable --now docker
+    - curtin in-target -- runuser -l lance -c "ssh-keyscan github.com >> ~/.ssh/known_hosts"
+    - curtin in-target -- runuser -l lance -c "mkdir -p /home/lance/git"
+    - curtin in-target -- runuser -l lance -c "sudo chmod -R 0777 /home/lance/git"
+    - curtin in-target -- runuser -l lance -c "sudo chown -R lance:lance /home/lance/git"
+    - curtin in-target -- runuser -l ansible -c "sudo touch /var/log/ansible.log"
+    - curtin in-target -- runuser -l ansible -c "sudo chown ansible:ansible /var/log/ansible.log"
+    - curtin in-target -- runuser -l ansible -c "sudo chmod 0777 /var/log/ansible.log"
 
   identity:
     hostname: ubuntu-2404
-    username: lance
-    password: $6$h80reOTR8Xp$Hk8A8J/3gtTwc.Y3D2pfPfuMp0S.9PuPB0KVst.C5G9EnE0Y44ebatnDQnS0l16IosYyiHvdAE4jiDW6NuPvF/
 
   ssh:
     install-server: true
@@ -71,36 +82,32 @@ autoinstall:
     authorized-keys:
       - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDFnt3zU50NcdNvO37qPwqsXtD1lZ9Ka0bb8io5HO+8lE24ZnQ7GEWbf3VU3sKQqj6O0Itupz3n1NZoq0YOxW4TNwiAiYi4MBwBjoQ5ALkzoj/DthrsfoiQtd7MXsfIfDp4tp6ktxC3DtgON461L0r55KQVXdARc92R4iEsoCXnZtT2s7cDIZcbRIW13yiB3gBoazOsTH7vLHiPS61YkKd0Ih5zpc+xgHmLUe/iR7Qazy3nZ/OwTOlEh2nxzACHhFDKz38WiwfJtnoIlsmJaow3Cq56onRJeuOqbSGS9fETkumGXAVuJkkyCcjBbthvWGlfMsa1gAI9fmMphYAzfYq5ZrTur+Npy+ycunkkOJeFhkKqPA/GC9L3ogS4/k8JZTpVdLhqQmAoANiIXiKWMn1rleT5q+EgX/S4Q7n1szM8jLZRFH8tr0sKxVC+qUxTbylaJk7j4b3juS3iZQAERAwGGP3sG5wrFtvZjFABEINuGC/ijisGupca0p+7cEFb0ECLFZ5dMqguGuHnnF1YIBj/O0iTT18+uiJl3RrZ6v2EkKQIlKMy4A7fpeMnrbuHS9TcdtRPwBhRacyCUX2mhVz6hxqy9WZ2sU6uXzuXI8PHwWptk89/avWwLFzk0l1TrzFEdJNRzo5qE/ZisobQaZt67R74zS+ngsmWE+/Vcm3Oyw== lance@pythoninthegrass
 
-  user-data:
-    timezone: "America/Chicago"
+  shutdown: reboot
 
+  user-data:
     groups:
       - docker
 
     users:
       - name: lance
-        sudo: ALL=(ALL) NOPASSWD:ALL
-        groups: [admin, users, wheel, docker]
+        gecos: Lance
+        passwrd: $6$h80reOTR8Xp$Hk8A8J/3gtTwc.Y3D2pfPfuMp0S.9PuPB0KVst.C5G9EnE0Y44ebatnDQnS0l16IosYyiHvdAE4jiDW6NuPvF/
+        lock_passwd: false
+        groups: admin, users, wheel, docker
+        sudo: "ALL=(ALL) NOPASSWD:ALL"
         shell: /bin/bash
         ssh_import_id:
           - gh:pythoninthegrass
+
       - name: ansible
-        sudo: ALL=(ALL) NOPASSWD:ALL
-        groups: [admin, users, wheel]
+        gecos: Ansible
+        lock_passwd: false
+        groups: admin, users, wheel
+        sudo: "ALL=(ALL) NOPASSWD:ALL"
         shell: /bin/bash
         ssh_import_id:
           - gh:pythoninthegrass
         no_ssh_fingerprints: true
-
-    runcmd:
-      - systemctl enable --now docker
-      - runuser -l lance -c "ssh-keyscan github.com >> ~/.ssh/known_hosts"
-      - runuser -l lance -c "mkdir -p /home/lance/git"
-      - runuser -l lance -c "sudo chmod -R 0777 /home/lance/git"
-      - runuser -l lance -c "sudo chown -R lance:lance /home/lance/git"
-      - runuser -l ansible -c "sudo touch /var/log/ansible.log"
-      - runuser -l ansible -c "sudo chown ansible:ansible /var/log/ansible.log"
-      - runuser -l ansible -c "sudo chmod 0777 /var/log/ansible.log"
 
     write_files:
       - path: /home/lance/.bash_aliases
@@ -114,10 +121,12 @@ autoinstall:
           alias ..='cd ../'
           alias ...='cd ../../'
           cd() { builtin cd "$@"; ll; }
+
       - path: /home/lance/.bash_profile
         owner: lance:lance
         content: |
           [[ -s ~/.bashrc ]] && source ~/.bashrc
+
       - path: /home/lance/.gitignore
         owner: lance:lance
         content: |
@@ -129,6 +138,7 @@ autoinstall:
           creds/
           service_account.json
           settings.ini
+
       - path: /home/lance/.gitconfig
         owner: lance:lance
         content: |
@@ -141,6 +151,7 @@ autoinstall:
             rebase = true
           [safe]
             directory = /etc/ansible/roles/hardening
+
       - path: /etc/ansible/hosts
         owner: ansible:ansible
         content: |
@@ -152,6 +163,7 @@ autoinstall:
           ansible_become=yes
           ansible_become_method=sudo
           ansible_python_interpreter=/usr/bin/python3
+
       - path: /etc/ansible/ansible.cfg
         owner: ansible:ansible
         content: |
@@ -165,6 +177,7 @@ autoinstall:
           fact_caching_prefix     = ansible_facts_
           fact_caching_timeout    = 60
           fact_caching_connection = localhost:6379:0
+
       - path: /etc/netplan/50-cloud-init.yaml
         owner: root:root
         permissions: '0644'
@@ -179,14 +192,17 @@ autoinstall:
                 set-name: ens3
                 nameservers:
                   addresses: [1.1.1.1, 1.0.0.1]
+
       - path: /etc/systemd/system/docker.service.d/override.conf
         content: |
           [Service]
           ExecStart=
           ExecStart=/usr/bin/dockerd
+
       - path: /etc/sysctl.d/enabled_ipv4_forwarding.conf
         content: |
           net.ipv4.conf.all.forwarding=1
+
       - path: /etc/docker/daemon.json
         content: |
           {
