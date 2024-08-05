@@ -1,0 +1,203 @@
+#cloud-config
+# yaml-language-server: $schema=https://json.schemastore.org/ubuntu-server-autoinstall.json
+
+autoinstall:
+  version: 1
+
+  apt:
+    sources:
+      deadsnakes.list:
+        source: deb http://ppa.launchpad.net/deadsnakes/ppa/ubuntu $RELEASE main
+        keyid: F23C5A6CF475977595C89F51BA6932366A755776
+      docker.list:
+        source: deb https://download.docker.com/linux/ubuntu $RELEASE stable
+        keyid: 9DC858229FC7DD38854AE2D88D81803C0EBFCD88
+
+  packages:
+    - ubuntu-desktop
+    - ubuntustudio-installer
+    - ansible
+    - apt-transport-https
+    - bats
+    - build-essential
+    - ca-certificates
+    - curl
+    - firefox
+    - docker-ce
+    - docker-ce-cli
+    - containerd.io
+    - git
+    - gnupg-agent
+    - net-tools
+    - python3
+    - python3-pip
+    - redis
+    - redis-server
+    - software-properties-common
+    - tree
+    - vim
+    - wget
+
+  snaps:
+    - name: gnome-46-2404
+    - name: gtk-common-themes
+    - name: snapd-desktop-integration
+
+  storage:
+    layout:
+      name: lvm
+
+  early-commands:
+    - echo 'linux-generic-hwe-22.04' > /run/kernel-meta-package
+
+  interactive-sections:
+    - network
+
+  late-commands:
+    - >-
+      curtin in-target -- sed -i /etc/default/grub -e 's/GRUB_CMDLINE_LINUX_DEFAULT=".*/GRUB_CMDLINE_LINUX_DEFAULT="quiet splash preempt=full"/'
+    - curtin in-target -- update-grub
+    - curtin in-target -- apt-get install -y cloud-init
+    - curtin in-target -- apt-get autoremove -y
+
+  identity:
+    hostname: ubuntu-2404
+    username: lance
+    password: $6$h80reOTR8Xp$Hk8A8J/3gtTwc.Y3D2pfPfuMp0S.9PuPB0KVst.C5G9EnE0Y44ebatnDQnS0l16IosYyiHvdAE4jiDW6NuPvF/
+
+  ssh:
+    install-server: true
+    allow-pw: false
+    authorized-keys:
+      - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDFnt3zU50NcdNvO37qPwqsXtD1lZ9Ka0bb8io5HO+8lE24ZnQ7GEWbf3VU3sKQqj6O0Itupz3n1NZoq0YOxW4TNwiAiYi4MBwBjoQ5ALkzoj/DthrsfoiQtd7MXsfIfDp4tp6ktxC3DtgON461L0r55KQVXdARc92R4iEsoCXnZtT2s7cDIZcbRIW13yiB3gBoazOsTH7vLHiPS61YkKd0Ih5zpc+xgHmLUe/iR7Qazy3nZ/OwTOlEh2nxzACHhFDKz38WiwfJtnoIlsmJaow3Cq56onRJeuOqbSGS9fETkumGXAVuJkkyCcjBbthvWGlfMsa1gAI9fmMphYAzfYq5ZrTur+Npy+ycunkkOJeFhkKqPA/GC9L3ogS4/k8JZTpVdLhqQmAoANiIXiKWMn1rleT5q+EgX/S4Q7n1szM8jLZRFH8tr0sKxVC+qUxTbylaJk7j4b3juS3iZQAERAwGGP3sG5wrFtvZjFABEINuGC/ijisGupca0p+7cEFb0ECLFZ5dMqguGuHnnF1YIBj/O0iTT18+uiJl3RrZ6v2EkKQIlKMy4A7fpeMnrbuHS9TcdtRPwBhRacyCUX2mhVz6hxqy9WZ2sU6uXzuXI8PHwWptk89/avWwLFzk0l1TrzFEdJNRzo5qE/ZisobQaZt67R74zS+ngsmWE+/Vcm3Oyw== lance@pythoninthegrass
+
+  user-data:
+    timezone: "America/Chicago"
+
+    groups:
+      - docker
+
+    users:
+      - name: lance
+        sudo: ALL=(ALL) NOPASSWD:ALL
+        groups: [admin, users, wheel, docker]
+        shell: /bin/bash
+        ssh_import_id:
+          - gh:pythoninthegrass
+      - name: ansible
+        sudo: ALL=(ALL) NOPASSWD:ALL
+        groups: [admin, users, wheel]
+        shell: /bin/bash
+        ssh_import_id:
+          - gh:pythoninthegrass
+        no_ssh_fingerprints: true
+
+    runcmd:
+      - systemctl enable --now docker
+      - runuser -l lance -c "ssh-keyscan github.com >> ~/.ssh/known_hosts"
+      - runuser -l lance -c "mkdir -p /home/lance/git"
+      - runuser -l lance -c "sudo chmod -R 0777 /home/lance/git"
+      - runuser -l lance -c "sudo chown -R lance:lance /home/lance/git"
+      - runuser -l ansible -c "sudo touch /var/log/ansible.log"
+      - runuser -l ansible -c "sudo chown ansible:ansible /var/log/ansible.log"
+      - runuser -l ansible -c "sudo chmod 0777 /var/log/ansible.log"
+
+    write_files:
+      - path: /home/lance/.bash_aliases
+        owner: lance:lance
+        permissions: '0644'
+        content: |
+          alias update='sudo apt update && sudo apt upgrade -y && sudo apt dist-upgrade -y && sudo apt autoremove -y && sudo apt auto-clean'
+          alias python='python3'
+          alias ll='ls -FGlAhp'
+          alias mkdir='mkdir -pv'
+          alias ..='cd ../'
+          alias ...='cd ../../'
+          cd() { builtin cd "$@"; ll; }
+      - path: /home/lance/.bash_profile
+        owner: lance:lance
+        content: |
+          [[ -s ~/.bashrc ]] && source ~/.bashrc
+      - path: /home/lance/.gitignore
+        owner: lance:lance
+        content: |
+          .env
+          .gitattributes
+          .venv
+          *.bak
+          **/scratch*
+          creds/
+          service_account.json
+          settings.ini
+      - path: /home/lance/.gitconfig
+        owner: lance:lance
+        content: |
+          [core]
+            excludesfile = /home/lance/.gitignore
+          [user]
+            email = 4097471+pythoninthegrass@users.noreply.github.com
+            name = pythoninthegrass
+          [pull]
+            rebase = true
+          [safe]
+            directory = /etc/ansible/roles/hardening
+      - path: /etc/ansible/hosts
+        owner: ansible:ansible
+        content: |
+          [all]
+          localhost ansible_connection=local
+
+          [all:vars]
+          ansible_user=ansible
+          ansible_become=yes
+          ansible_become_method=sudo
+          ansible_python_interpreter=/usr/bin/python3
+      - path: /etc/ansible/ansible.cfg
+        owner: ansible:ansible
+        content: |
+          [defaults]
+          log_path                = /var/log/ansible.log
+          host_key_checking       = False
+          retry_files_enabled     = False
+          remote_tmp              = /tmp/${USER}/ansible
+          gathering               = smart
+          fact_caching            = jsonfile
+          fact_caching_prefix     = ansible_facts_
+          fact_caching_timeout    = 60
+          fact_caching_connection = localhost:6379:0
+      - path: /etc/netplan/50-cloud-init.yaml
+        owner: root:root
+        permissions: '0644'
+        content: |
+          network:
+            version: 2
+            ethernets:
+              ens3:
+                dhcp4: true
+                match:
+                  name: en*s3
+                set-name: ens3
+                nameservers:
+                  addresses: [1.1.1.1, 1.0.0.1]
+      - path: /etc/systemd/system/docker.service.d/override.conf
+        content: |
+          [Service]
+          ExecStart=
+          ExecStart=/usr/bin/dockerd
+      - path: /etc/sysctl.d/enabled_ipv4_forwarding.conf
+        content: |
+          net.ipv4.conf.all.forwarding=1
+      - path: /etc/docker/daemon.json
+        content: |
+          {
+            "dns": [
+              "1.1.1.1",
+              "1.0.0.1"
+            ],
+            "hosts": ["tcp://0.0.0.0:2375", "unix:///var/run/docker.sock"]
+          }
+
+    bootcmd:
+      - printf "[Resolve]\nDNS=1.1.1.1" > /etc/systemd/resolved.conf
+      - printf "\nDNS=1.0.0.1" >> /etc/systemd/resolved.conf
+      - systemctl restart systemd-resolved
