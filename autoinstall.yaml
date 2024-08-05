@@ -1,35 +1,25 @@
 #cloud-config
+
 autoinstall:
-  # version is an Autoinstall required field.
   version: 1
 
-  # This adds the default ubuntu-desktop packages to the system.
-  # Any desired additional packages may also be listed here.
   packages:
     - ubuntu-desktop
 
-  # This adds the default snaps found on a 22.04 Ubuntu Desktop system.
-  # Any desired additional snaps may also be listed here.
   snaps:
     - name: firefox
-    - name: gnome-3-38-2004
     - name: gtk-common-themes
     - name: snap-store
     - name: snapd-desktop-integration
 
-  # User creation can occur in one of 3 ways:
-  # 1. Create a user using this `identity` section.
-  # 2. Create users as documented in cloud-init inside the user-data section,
-  #    which means this single-user identity section may be removed.
-  # 3. Prompt for user configuration on first boot.  Remove this identity
-  #    section and see the "Installation without a default user" section.
+  # TODO: fill out password et al
   identity:
-    realname: ''
-    username: ubuntu
+    realname: 'Lance'
+    username: lance
     # A password hash is needed. `mkpasswd --method=SHA-512` can help.
     # mkpasswd can be found in the package 'whois'
-    password: '<password hash>'
-    hostname: ubuntu-desktop
+    password: ''
+    hostname: ubuntu-24.04
 
   # Subiquity will, by default, configure a partition layout using LVM.
   # The 'direct' layout method shown here will produce a non-LVM result.
