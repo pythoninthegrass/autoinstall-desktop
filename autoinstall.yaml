@@ -7,82 +7,227 @@ autoinstall:
     - ubuntu-desktop
 
   snaps:
-    - name: firefox
+    - name: gnome-46-2404
     - name: gtk-common-themes
-    - name: snap-store
     - name: snapd-desktop-integration
 
-  # TODO: fill out password et al
-  identity:
-    realname: 'Lance'
-    username: lance
-    # A password hash is needed. `mkpasswd --method=SHA-512` can help.
-    # mkpasswd can be found in the package 'whois'
-    password: ''
-    hostname: ubuntu-24.04
-
-  # Subiquity will, by default, configure a partition layout using LVM.
-  # The 'direct' layout method shown here will produce a non-LVM result.
   storage:
     layout:
-      name: direct
+      name: lvm   # lvm, direct, zfs
 
   # Ubuntu Desktop uses the hwe flavor kernel by default.
   early-commands:
     - echo 'linux-generic-hwe-22.04' > /run/kernel-meta-package
 
-  # The live-server ISO does not contain some of the required packages,
-  # such as ubuntu-desktop or the hwe kernel (or most of their depdendencies).
-  # The system being installed will need some sort of apt access.
-  # proxy: http://192.168.0.1:3142
-
   late-commands:
     # Enable the boot splash
     - >-
-      curtin in-target --
-      sed -i /etc/default/grub -e
-      's/GRUB_CMDLINE_LINUX_DEFAULT=".*/GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"/'
+      curtin in-target -- sed -i /etc/default/grub -e 's/GRUB_CMDLINE_LINUX_DEFAULT=".*/GRUB_CMDLINE_LINUX_DEFAULT="quiet splash preempt=full"/'
     - curtin in-target -- update-grub
 
-    # Let NetworkManager handle network
-    - rm /target/etc/netplan/00-installer-config*yaml
-    - >-
-      printf "network:\n  version: 2\n  renderer: NetworkManager"
-      > /target/etc/netplan/01-network-manager-all.yaml
-
-    # Remove default filesystem and related tools not used with the suggested
-    # 'direct' storage layout.  These may yet be required if different
-    # partitioning schemes are used.
-    - >-
-      curtin in-target -- apt-get remove -y
-      btrfs-progs cryptsetup* lvm2 xfsprogs
-
-    # Remove other packages present by default in Ubuntu Server but not
-    # normally present in Ubuntu Desktop.
-    - >-
-      curtin in-target -- apt-get remove -y
-      ubuntu-server ubuntu-server-minimal
-      binutils byobu curl dmeventd finalrd gawk
-      kpartx mdadm ncurses-term needrestart open-iscsi openssh-server
-      sg3-utils ssh-import-id sssd thin-provisioning-tools vim tmux
-      sosreport screen open-vm-tools motd-news-config lxd-agent-loader
-      landscape-common htop git fonts-ubuntu-console ethtool
-
-    # Keep cloud-init, as it performs some of the installation on first boot.
     - curtin in-target -- apt-get install -y cloud-init
-
-    # Finally, remove things only installed as dependencies of other things
-    # we have already removed.
     - curtin in-target -- apt-get autoremove -y
 
-    # A postinstall script may optionally be used for further install
-    # customization. Deploy this postinstall.sh script on the webserver.
-    # - wget -O /target/postinstall.sh http://192.168.0.2/postinstall.sh
-    # - curtin in-target -- bash /postinstall.sh
-    # - rm /target/postinstall.sh
+  user-data:
+    output: {all: '| tee -a /var/log/cloud-init.log'}
 
-  # Additional cloud-init configuration affecting the target
-  # system can be supplied underneath a user-data section inside of
-  # autoinstall.
-  # user-data:
-  #   …
+    timezone: "America/Chicago"
+
+    hostname: ubuntu
+
+    package_update: true      # default: true
+    package_upgrade: false    # default: false  # TODO: set to true
+    # https://github.com/number5/cloud-init/blob/main/doc/examples/cloud-config-apt.txt#L21
+    apt_get_command: ["apt-get", "--option=Dpkg::Options::=--force-confold", "--option=Dpkg::options::=--force-unsafe-io", "--assume-yes", "--quiet", "--no-install-recommends"]
+
+    apt:
+      sources:
+        deadsnakes.list:
+          source: deb http://ppa.launchpad.net/deadsnakes/ppa/ubuntu $RELEASE main
+          keyid: F23C5A6CF475977595C89F51BA6932366A755776
+        docker.list:
+          source: deb https://download.docker.com/linux/ubuntu $RELEASE stable
+          keyid: 9DC858229FC7DD38854AE2D88D81803C0EBFCD88
+
+    packages:
+      - ubuntustudio-installer
+      - ansible
+      - apt-transport-https
+      - bats
+      - build-essential
+      - ca-certificates
+      - curl
+      - firefox
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - git
+      - gnupg-agent
+      - net-tools
+      - python3
+      - python3-pip
+      - redis
+      - redis-server
+      - software-properties-common
+      - tree
+      - vim
+      - wget
+
+    groups:
+      - docker
+
+    system_info:
+      default_user:
+        groups: [docker]
+
+    users:
+      - name: lance
+        plain_text_passwd: 'lance'
+        sudo: [ALL=(ALL) NOPASSWD:ALL]
+        gecos: Lance
+        home: /home/lance
+        groups: [admin, users, wheel]
+        lock_passwd: true
+        shell: /bin/bash
+        ssh_import_id:
+          - gh:pythoninthegrass
+
+      - name: ansible
+        plain_text_passwd: 'ansible'
+        sudo: [ALL=(ALL) NOPASSWD:ALL]
+        gecos: Ansible
+        groups: [admin, users, wheel]
+        lock_passwd: true
+        shell: /bin/bash
+        ssh_import_id:
+          - gh:pythoninthegrass
+        no_ssh_fingerprints: true
+
+    runcmd:
+      - systemctl enable --now docker
+      - runuser -l lance -c "ssh-keyscan github.com >> ~/.ssh/known_hosts"
+      - runuser -l lance -c "mkdir -p /home/lance/git"
+      - runuser -l lance -c "sudo chmod -R 0777 /home/lance/git"
+      - runuser -l lance -c "sudo chown -R ubuntu:ubuntu /home/lance/git"
+      - runuser -l ansible -c "sudo touch /var/log/ansible.log"
+      - runuser -l ansible -c "sudo chown ansible:ansible /var/log/ansible.log"
+      - runuser -l ansible -c "sudo chmod 0777 /var/log/ansible.log"
+      # * smoke test
+      # - ansible all -m ping -i /etc/ansible/hosts
+
+    ssh:
+      emit_keys_to_console: false
+
+    write_files:
+      - path: /home/lance/.bash_aliases
+        owner: ubuntu:ubuntu
+        permissions: '0644'
+        append: false
+        content: |
+          alias update='sudo apt update && sudo apt upgrade -y && sudo apt dist-upgrade -y && sudo apt autoremove -y && sudo apt auto-clean'
+          alias python='python3'
+          alias ll='ls -FGlAhp'
+          alias mkdir='mkdir -pv'
+          alias ..='cd ../'
+          alias ...='cd ../../'
+          cd() { builtin cd "$@"; ll; }
+
+      - path: /home/lance/.bash_profile
+        owner: ubuntu:ubuntu
+        content: |
+          [[ -s ~/.bashrc ]] && source ~/.bashrc
+
+      - path: /home/lance/.gitignore
+        owner: ubuntu:ubuntu
+        content: |
+          .env
+          .gitattributes
+          .venv
+          *.bak
+          **/scratch*
+          creds/
+          service_account.json
+          settings.ini
+
+      - path: /home/lance/.gitconfig
+        owner: ubuntu:ubuntu
+        content: |
+          [core]
+            excludesfile = /home/lance/.gitignore
+          [user]
+            email = 4097471+pythoninthegrass@users.noreply.github.com
+            name = pythoninthegrass
+          [pull]
+            rebase = true
+          [safe]
+            directory = /etc/ansible/roles/hardening
+
+      - path: /etc/ansible/hosts
+        owner: ansible:ansible
+        content: |
+          [all]
+          localhost ansible_connection=local
+
+          [all:vars]
+          ansible_user=ansible
+          ansible_become=yes
+          ansible_become_method=sudo
+          ansible_python_interpreter=/usr/bin/python3
+
+      - path: /etc/ansible/ansible.cfg
+        owner: ansible:ansible
+        content: |
+          [defaults]
+          log_path                = /var/log/ansible.log
+          host_key_checking       = False
+          retry_files_enabled     = False
+          remote_tmp              = /tmp/${USER}/ansible
+          gathering               = smart
+          fact_caching            = jsonfile
+          fact_caching_prefix     = ansible_facts_
+          fact_caching_timeout    = 60
+          fact_caching_connection = localhost:6379:0
+
+      - path: /etc/netplan/50-cloud-init.yaml
+        owner: root:root
+        permissions: '0644'
+        append: false
+        content: |
+          network:
+            version: 2
+            ethernets:
+              ens3:
+                dhcp4: true
+                match:
+                  name: en*s3
+                set-name: ens3
+                nameservers:
+                  addresses: [1.1.1.1, 1.0.0.1]
+
+      - path: /etc/systemd/system/docker.service.d/override.conf
+        content: |
+          # Disable flags to dockerd, all settings are done in /etc/docker/daemon.json
+          [Service]
+          ExecStart=
+          ExecStart=/usr/bin/dockerd
+
+      - path: /etc/sysctl.d/enabled_ipv4_forwarding.conf
+        content: |
+          net.ipv4.conf.all.forwarding=1
+
+      - path: /etc/docker/daemon.json
+        content: |
+          {
+            "dns": [
+              "1.1.1.1",
+              "1.0.0.1"
+            ],
+            "hosts": ["tcp://0.0.0.0:2375", "unix:///var/run/docker.sock"]
+          }
+
+    bootcmd:
+      - printf "[Resolve]\nDNS=1.1.1.1" > /etc/systemd/resolved.conf
+      - printf "\nDNS=1.0.0.1" >> /etc/systemd/resolved.conf
+      - systemctl restart systemd-resolved
+
+    final_message: "The system is finally up, after $UPTIME seconds"
